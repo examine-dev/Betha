@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Correção</title>
+  <link rel="stylesheet" href="styles/scan.css">
+</head>
+<body>
+  <h1>Correção</h1>
+
+  <video id="video" autoplay playsinline width="480" height="360"></video>
+  <div id="controls">
+    <button id="snapBtn" class="btn">Tirar Foto</button>
+    <button id="processBtn" class="btn">Processar</button>
+    <button id="downloadJson" class="btn">Baixar JSON</button>
+  </div>
+
+  <canvas id="photoCanvas" width="1280" height="960" style="display:none"></canvas>
+  <canvas id="debugCanvas" width="800" height="600"></canvas>
+
+  <div id="log">Carregando OpenCV...</div>
+
+  <!-- OpenCV.js (versão wasm) -->
+  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();" ></script>
+  <!-- jsQR para leitura de QR codes (opcional) -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script src="js/scan.js"></script>
+
+</body>
