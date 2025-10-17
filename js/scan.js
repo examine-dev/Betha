@@ -28,15 +28,15 @@ function onOpenCvReady() {
     };
 }
 
-function startCam(){
+function startCam() {
     const constraints = {
         video: {
             facingMode: "environment"  // força a usar a câmera traseira
         },
         audio: false
     };
-    // Pega a câmera
-    navigator.mediaDevices.getUserMedia({ constraints })
+
+    navigator.mediaDevices.getUserMedia(constraints)
         .then(stream => {
             video.srcObject = stream;
             video.play();
@@ -44,7 +44,7 @@ function startCam(){
         })
         .catch(err => {
             console.error('Erro ao acessar a câmera:', err);
-            document.getElementById('log').innerText = 'Erro ao acessar a câmera';
+            document.getElementById('log').innerText = 'Erro ao acessar a câmera (tente permitir o uso da câmera traseira)';
         });
 };
 
