@@ -37,7 +37,7 @@ function startCam(){
         audio: false
     };
     // Pega a câmera
-    navigator.mediaDevices.getUserMedia( { video: true, video: { facingMode: "environment"}, audio: false} )
+    navigator.mediaDevices.getUserMedia( { video: { facingMode: "environment"}, audio: false} )
         .then(stream => {
             video.srcObject = stream;
             video.play();
