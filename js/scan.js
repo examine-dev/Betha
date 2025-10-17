@@ -29,8 +29,14 @@ function onOpenCvReady() {
 }
 
 function startCam(){
+    const constraints = {
+        video: {
+            facingMode: "environment"  // força a usar a câmera traseira
+        },
+        audio: false
+    };
     // Pega a câmera
-    navigator.mediaDevices.getUserMedia({ video: true })
+    navigator.mediaDevices.getUserMedia({ constraints })
         .then(stream => {
             video.srcObject = stream;
             video.play();
