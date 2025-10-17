@@ -37,7 +37,7 @@ function startCam(){
         audio: false
     };
     // Pega a câmera
-    navigator.mediaDevices.getUserMedia({ constraints })
+    navigator.mediaDevices.getUserMedia( { video: true, video: { facingMode: "environment"}, audio: false} )
         .then(stream => {
             video.srcObject = stream;
             video.play();
@@ -131,7 +131,7 @@ function detectaRectange(dst, src, rects){
             cv.rectangle(dst, new cv.Point(r.x, r.y), new cv.Point(r.x + rectSize, r.y + rectSize),
                         new cv.Scalar(0, 0, 255, 255), 2);
         }
-        document.getElementById('log').innerText = "Alinhamento: ";
+        document.getElementById('log').innerText = alignedCount + " - " + aligned;
 
         roi.delete();
     }
