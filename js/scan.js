@@ -30,10 +30,10 @@ function onOpenCvReady() {
 
 function startCam() {
     const constraints = {
+        audio: false,
         video: {
-            facingMode: "environment"  // força a usar a câmera traseira
-        },
-        audio: false
+            facingMode: { ideal: "environment" } // pede a traseira, mas não dá erro se não existir
+        }
     };
 
     navigator.mediaDevices.getUserMedia(constraints)
