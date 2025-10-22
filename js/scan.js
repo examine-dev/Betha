@@ -4,6 +4,7 @@
     // Seleciona o canvas
 const video = document.getElementById('video');
 const canvas = document.getElementById('photoCanvas');
+const auxCanvas = document.getElementById('auxCanvas');
 const snapBtn = document.getElementById('snapBtn');
 const log = document.getElementById('log');
 
@@ -13,13 +14,7 @@ canvas.height = 400;
 let ctx = canvas.getContext('2d', { willReadFrequently: true });
 
 
-
-
-// scan.js
-
-
-
-
+// inicia o OpenCv
 function onOpenCvReady() {
     cv['onRuntimeInitialized'] = () => {
         document.getElementById('log').innerText = 'OpenCV carregado com sucesso!';
@@ -28,6 +23,7 @@ function onOpenCvReady() {
     };
 }
 
+// Inicia a camero do dispositivo
 function startCam(){
     const constraints = {        
         video: {
@@ -49,104 +45,126 @@ function startCam(){
         });
 };
 
+// Processa o frame do vídeo
 function startProcessing() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    let src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4); // 4 canais RGBA
+    let src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4); 
     let dst = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
 
     function processVideo() {
         try {
-            // Captura o frame do vídeo
+            // Captura frame da câmera
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             src.data.set(imageData.data);
 
-            // Copia o frame para dst
+            // Copia frame para dst (onde desenharemos)
             src.copyTo(dst);
 
-            // Desenha um círculo verde no centro
-            let rectSize = 50; // tamanho de cada retângulo
-            let canvasWidth = canvas.width;
-            let canvasHeight = canvas.height;
-
+            // Define as 3 regiões de referência
+            let rectSize = 50;
             let rects = [
-                { x: 20, y: 20, w: rectSize, h: rectSize },                          // canto superior esquerdo
-                { x: canvasWidth - rectSize - 20, y: 20, w: rectSize, h: rectSize }, // canto superior direito
-                { x: 20, y: canvasHeight - rectSize - 20, w: rectSize, h: rectSize } // canto inferior esquerdo
+                { x: 20, y: 20, w: rectSize, h: rectSize },
+                { x: canvas.width - rectSize - 20, y: 20, w: rectSize, h: rectSize },
+                { x: 20, y: canvas.height - rectSize - 20, w: rectSize, h: rectSize }
             ];
-            for (let r of rects) {
-                let pt1 = new cv.Point(r.x, r.y);
-                let pt2 = new cv.Point(r.x + r.w, r.y + r.h);
-                cv.rectangle(dst, pt1, pt2, new cv.Scalar(0, 0, 255, 255), 2); // vermelho
-            };
 
-            cv.imshow(canvas, dst);
-            
+            // Detecta preenchimento e desenha retângulos
+            let aligned = detectaRectange(dst, src, rects);
 
-            // verifica se as três marcas estão alinhadas as marcações da folha
-            detectaRectange(dst, src, rects);
-            // Loop contínuo
+            // Exibe o macro apenas se estiver alinhado
+            if(aligned){
+                let macro = detectaRetanguloMacro(src, rects);
+                auxCanvas.style.display = 'block';       // garante que o canvas está visível
+                auxCanvas.width = macro.cols;
+                auxCanvas.height = macro.rows;
+                cv.imshow('auxCanvas', macro);           // mostra apenas no auxCanvas
+                macro.delete();
+            }
+
+            // Exibe a câmera com os retângulos no photoCanvas
+            cv.imshow('photoCanvas', dst);
+
             requestAnimationFrame(processVideo);
+
         } catch (err) {
             console.error(err);
         }
     }
 
     requestAnimationFrame(processVideo);
-};
+}
 
-function detectaRectange(dst, src, rects){
-    rectSize = rects[0].w
+// Função de detecção
+function detectaRectange(dst, src, rects) {
+    const rectSize = rects[0].w;
 
     let gray = new cv.Mat();
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    // Aplica threshold para destacar regiões escuras
     let binary = new cv.Mat();
     cv.threshold(gray, binary, 60, 255, cv.THRESH_BINARY_INV);
 
-    // Flag começa como FALSE
-    let aligned = false;
 
-    // Contador de retângulos corretamente detectados
-    let alignedCount = 1;
+    let alignedCount = 0;
 
     for (let r of rects) {
         let roi = binary.roi(new cv.Rect(r.x, r.y, rectSize, rectSize));
-
         let nonZero = cv.countNonZero(roi);
-        let area = rectSize * rectSize;
-        let fillRatio = nonZero / area;
+        let fillRatio = nonZero / (rectSize * rectSize);
 
-        // Limite mínimo de preenchimento (ajustável)
-        if (fillRatio > 0.2) {
-            alignedCount++;
-            // retângulo verde → marcador detectado
-            cv.rectangle(dst, new cv.Point(r.x, r.y), new cv.Point(r.x + rectSize, r.y + rectSize),
-                        new cv.Scalar(0, 255, 0, 255), 2);
-        } else {
-            // retângulo vermelho → não detectado
-            cv.rectangle(dst, new cv.Point(r.x, r.y), new cv.Point(r.x + rectSize, r.y + rectSize),
-                        new cv.Scalar(0, 0, 255, 255), 2);
+        // Verde se detectado, azul se não
+        let color = fillRatio > 0.6
+            ? new cv.Scalar(0, 255, 0, 255)   // verde
+            : new cv.Scalar(0, 0, 255, 255);  // azul
+
+        if (fillRatio > 0.6) alignedCount++;
+
+        cv.rectangle(
+            dst,
+            new cv.Point(r.x, r.y),
+            new cv.Point(r.x + rectSize, r.y + rectSize),
+            color,
+            2
+        );
+        if(alignedCount == 3){
+            document.getElementById('log').innerText = alignedCount;
+            let macro = detectaRetanguloMacro(src, rects);
+            // Para mostrar no canvas (temporário)
+            cv.imshow('photoCanvas', macro);
+            // Depois de usar, lembre de liberar memória
+            macro.delete();
         }
-        document.getElementById('log').innerText = alignedCount + " - " + aligned;
 
         roi.delete();
     }
 
-    // Se os 3 retângulos estiverem detectados, então aligned = true
-    if (alignedCount === rects.length) {
-        aligned = true;
-    }
-
-    // Mostra status na tela
-    //document.getElementById('log').innerText = aligned ? 'Folha alinhada ✅' : 'Desalinhada ❌';
-
-    // Libera memória
     gray.delete();
     binary.delete();
 
-    return aligned;
+    return alignedCount === rects.length;
 }
+
+
+function detectaRetanguloMacro(src, rects) {
+    // Calcula a ROI baseada nos 3 retângulos
+    let xMin = rects[0].x;
+    let yMin = rects[0].y;
+    let xMax = rects[1].x + rects[1].w;
+    let yMax = rects[2].y + rects[2].h;
+
+    let width = xMax - xMin;
+    let height = yMax - yMin;
+
+    xMin = Math.max(0, xMin);
+    yMin = Math.max(0, yMin);
+    width = Math.min(src.cols - xMin, width);
+    height = Math.min(src.rows - yMin, height);
+
+    return src.roi(new cv.Rect(xMin, yMin, width, height));
+}
+
+
+
