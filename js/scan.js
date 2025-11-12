@@ -57,292 +57,142 @@ function startCam(){
         });
 };
 
-// 3. Processa o frame do vídeo (REVISADA)
-function startProcessing() {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+// Configuração da câmera
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+  .then(stream => { video.srcObject = stream; })
+  .catch(err => console.error("Erro ao acessar câmera:", err));
 
-    // Declara e inicializa a matriz 'src' (source/origem) do OpenCV
-    let src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4); 
-    // Declara e inicializa a matriz 'dst' (destination/destino) do OpenCV
-    let dst = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
+video.addEventListener("loadeddata", () => {
+  processarFrame();
+});
 
-    function processVideo() {
-        try {
-            // Captura frame da câmera
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            src.data.set(imageData.data);
+// === Função principal de processamento ===
+function processarFrame() {
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  let src = cv.imread(canvas);
 
-            // Copia frame para dst (onde desenharemos)
-            src.copyTo(dst);
+  try {
+    let retangulos = detectarContornos(src);
+    let folhaRect = detectaRetanguloMacro(src, retangulos);
 
-            // Define as 3 regiões de referência
-            let rectSize = 50;
-            let rects = [
-                { x: 20, y: 20, w: rectSize, h: rectSize },
-                { x: canvas.width - rectSize - 20, y: 20, w: rectSize, h: rectSize },
-                { x: 20, y: canvas.height - rectSize - 20, w: rectSize, h: rectSize }
-            ];
+    if (folhaRect) {
+      // 🔹 Obtem o retângulo principal (ROI)
+      let folhaCorrigida = corrigirPerspectiva(src, folhaRect);
 
-            // 4. CHAMA A FUNÇÃO DE ALINHAMENTO (AGORA RETORNA A MATRIZ BINÁRIA)
-            let alignmentResult = detectaRetanguloAlinhamento(dst, src, rects);
+      // Aqui você pode continuar com o pipeline de leitura:
+      // detectar bolhas, gabarito, etc.
+      cv.imshow("canvas", folhaCorrigida);
 
-            // PROCESSAMENTO DE DADOS (Sub-retângulos)
-            if(alignmentResult.isAligned){
-                
-                // Matriz binária pré-processada (REUTILIZADA)
-                const binaryMat = alignmentResult.binaryMat;
-                
-                // Obtém o objeto cv.Rect da área macro (NÃO a Matriz)
-                const macroRoiRect = detectaRetanguloMacro(src, rects);
-                
-                // Processa o grid de 100 sub-retângulos
-                const resultadosDaLeitura = processarGrid100SubRetangulos(binaryMat, macroRoiRect, dst, GABARITO_CORRETO, 25);
-                
-                document.getElementById('log').innerText = `Alinhamento OK. ${resultadosDaLeitura.marcacoes} marcações detectadas.`;
-
-                // **IMPORTANTE:** Deleta a Matriz Binária aqui, após o uso em todas as verificações.
-                binaryMat.delete();
-                
-            } else {
-                 document.getElementById('log').innerText = 'Alinhamento da folha...';
-                 // Se não estiver alinhado, a matriz binaryMat já foi deletada dentro de detectaRetanguloAlinhamento
-            }
-            
-            // Exibe a câmera com os retângulos no photoCanvas
-            cv.imshow('photoCanvas', dst);
-
-            requestAnimationFrame(processVideo);
-
-        } catch (err) {
-            console.error(err);
-        }
+      folhaCorrigida.delete();
     }
 
-    requestAnimationFrame(processVideo);
-}
+    src.delete();
+  } catch (e) {
+    console.error("Erro no processamento:", e);
+    src.delete();
+  }
 
-// 4. Verifica se os retângulos de referências foram posicionados na região correta da folha. (REVISADA)
-// RETORNA UM OBJETO COM O STATUS E A MATRIZ BINÁRIA.
-function detectaRetanguloAlinhamento(dst, src, rects) {
-    const rectSize = rects[0].w;
-
-    let gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-    let binary = new cv.Mat();
-    cv.threshold(gray, binary, 60, 255, cv.THRESH_BINARY_INV); // Usando 60 como limiar para 'preto'
-
-    let alignedCount = 0;
-
-    for (let r of rects) {
-        // Usa a Matriz Binária para a verificação
-        let roi = binary.roi(new cv.Rect(r.x, r.y, rectSize, rectSize));
-        let nonZero = cv.countNonZero(roi);
-        let fillRatio = nonZero / (rectSize * rectSize);
-
-        // Verde se detectado (preenchido), azul se não
-        let color = fillRatio > 0.6
-            ? new cv.Scalar(0, 255, 0, 255)   // verde
-            : new cv.Scalar(0, 0, 255, 255);  // azul
-
-        if (fillRatio > 0.6) {
-            alignedCount++; // contagem dos retângulos alinhados
-        }
-        alignedCount++; // força temporariamente, mesmo não alinhado, para testes dos processamentos a seguir. 
-
-        cv.rectangle(
-            dst,
-            new cv.Point(r.x, r.y),
-            new cv.Point(r.x + rectSize, r.y + rectSize),
-            color,
-            2
-        );
-
-        roi.delete();
-    }
-
-    gray.delete(); // Deleta a matriz cinza intermediária
-
-    if (alignedCount === rects.length) {
-        // Alinhado: Retorna a matriz binária para reuso.
-        return { isAligned: true, binaryMat: binary };
-    } else {
-        // Não alinhado: Deleta a matriz binária, pois não será usada.
-        binary.delete();
-        return { isAligned: false, binaryMat: null };
-    }
+  requestAnimationFrame(processarFrame);
 }
 
 
-// 5. Obtem o retângulo princial (REVISADA - Retorna cv.Rect, não cv.Mat)
+// === Detecta os contornos e retorna os candidatos a retângulos ===
+function detectarContornos(src) {
+  let gray = new cv.Mat();
+  let thresh = new cv.Mat();
+  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+  cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+  cv.Canny(gray, thresh, 75, 200);
+
+  let contours = new cv.MatVector();
+  let hierarchy = new cv.Mat();
+  cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+  let rects = [];
+  for (let i = 0; i < contours.size(); i++) {
+    let cnt = contours.get(i);
+    let peri = cv.arcLength(cnt, true);
+    let approx = new cv.Mat();
+    cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+
+    // 🔹 Se for um quadrilátero grande, considera como candidato
+    if (approx.rows === 4 && cv.contourArea(approx) > 20000) {
+      rects.push(approx);
+    }
+  }
+
+  gray.delete(); thresh.delete(); hierarchy.delete();
+  return rects;
+}
+
+
+// === Localiza o retângulo principal (macro) ===
 function detectaRetanguloMacro(src, rects) {
-    // Calcula a ROI baseada nos 3 retângulos
-    let xMin = rects[0].x;
-    let yMin = rects[0].y;
-    let xMax = rects[1].x + rects[1].w;
-    let yMax = rects[2].y + rects[2].h;
+  if (!rects || rects.length === 0) return null;
 
+  // Ordena por área e pega o maior
+  rects.sort((a, b) => cv.contourArea(b) - cv.contourArea(a));
+  const maior = rects[0];
 
-    let width = xMax - xMin;
-    let height = yMax - yMin;
+  // Extrai os quatro pontos do contorno
+  let pts = [];
+  for (let i = 0; i < 4; i++) {
+    pts.push({
+      x: maior.intPtr(i, 0)[0],
+      y: maior.intPtr(i, 0)[1]
+    });
+  }
 
-    xMin = Math.max(0, xMin);
-    yMin = Math.max(0, yMin);
-    width = Math.min(src.cols - xMin, width);
-    height = Math.min(src.rows - yMin, height);
-    
-    // Retorna o objeto Rect, que contém as coordenadas da ROI.
-    return new cv.Rect(xMin, yMin, width, height);
+  return pts;
 }
 
-// 6. REVISADA NOVAMENTE: Processa o grid, compara com o gabarito e desenha retângulos/X coloridos.
-function processarGrid100SubRetangulos(binaryMat, macroRoiRect, dst, gabarito, numQuestoesPorColuna = 25) {
-    
-    // --- Configurações da Estrutura ---
-    const numColunasGabarito = 4; 
-    const numLinhasGabarito = numQuestoesPorColuna; 
-    const numFatiasInternas = 6; 
-    const options = ['A', 'B', 'C', 'D', 'E']; 
-    const thresholdFill = 0.15; 
 
-    // --- Dimensões ---
-    const larguraMacro = macroRoiRect.width;
-    const alturaMacro = macroRoiRect.height;
-    const xOffset = macroRoiRect.x;
-    const yOffset = macroRoiRect.y;
+// === 🧠 Correção de perspectiva ===
+function corrigirPerspectiva(src, pontos) {
+  // 🔹 Ordena os pontos: topo-esq, topo-dir, baixo-esq, baixo-dir
+  pontos.sort((a, b) => a.y - b.y);
+  let top = pontos.slice(0, 2).sort((a, b) => a.x - b.x);
+  let bottom = pontos.slice(2, 4).sort((a, b) => a.x - b.x);
 
-    const subLargura = Math.floor(larguraMacro / numColunasGabarito);
-    const subAltura = Math.floor(alturaMacro / numLinhasGabarito);
-    const fatiaLargura = Math.floor(subLargura / numFatiasInternas);
+  let tl = top[0];
+  let tr = top[1];
+  let bl = bottom[0];
+  let br = bottom[1];
 
-    let resultadosQuestoes = {}; 
-    let marcacoesDetectadas = 0;
-    let acertos = 0;
-    let questaoGlobal = 0; 
+  // 🔹 Calcula largura e altura do novo retângulo
+  let largura = Math.max(
+    Math.hypot(br.x - bl.x, br.y - bl.y),
+    Math.hypot(tr.x - tl.x, tr.y - tl.y)
+  );
+  let altura = Math.max(
+    Math.hypot(tr.x - br.x, tr.y - br.y),
+    Math.hypot(tl.x - bl.x, tl.y - bl.y)
+  );
 
-    // --- Cores ---
-    const COR_ACERTO = new cv.Scalar(0, 255, 0, 255);   // Verde (Marcação correta)
-    const COR_ERRO = new cv.Scalar(255, 0, 0, 255);     // Vermelho (Marcação incorreta/Múltipla)
-    const COR_GABARITO_NAO_MARCADO = new cv.Scalar(0, 255, 0, 255); // Verde (para o 'X' do gabarito)
-    
-    // Percorre os blocos de questões (Colunas)
-    for (let j = 0; j < numColunasGabarito; j++) {
-        // Percorre as questões dentro do bloco (Linhas)
-        for (let i = 0; i < numLinhasGabarito; i++) {
-            
-            questaoGlobal++;
-            const respostaCorreta = gabarito[questaoGlobal]; 
-            
-            // Verifica se a resposta correta existe no gabarito
-            if (typeof respostaCorreta === 'undefined') {
-                console.warn(`Aviso: Gabarito faltando para a Questão ${questaoGlobal}. Pulando correção e desenho.`);
-                // Se o gabarito não tem essa questão, pulamos o desenho e a lógica de correção para ela.
-                continue; 
-            }
+  // 🔹 Define os pontos destino (retângulo “achatado”)
+  let srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    tl.x, tl.y,
+    tr.x, tr.y,
+    bl.x, bl.y,
+    br.x, br.y
+  ]);
 
-            resultadosQuestoes[questaoGlobal] = {
-                marcadas: [],  
-                status: 'EM_BRANCO' 
-            };
-            
-            const x_celula_global = xOffset + j * subLargura;
-            const y_celula_global = yOffset + i * subAltura;
+  let dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    0, 0,
+    largura - 1, 0,
+    0, altura - 1,
+    largura - 1, altura - 1
+  ]);
 
-            // Variável para armazenar o Rect da opção correta, caso ela não seja marcada
-            let rectOpcaoCorretaNaoMarcada = null;
+  // 🔹 Aplica a transformação
+  let M = cv.getPerspectiveTransform(srcPts, dstPts);
+  let corrigida = new cv.Mat();
+  cv.warpPerspective(src, corrigida, M, new cv.Size(largura, altura));
 
-            // --- Loop de Fatias de Opção (A a E) ---
-            for (let k = 1; k < numFatiasInternas; k++) { 
-                
-                const opcao = options[k - 1]; 
+  srcPts.delete();
+  dstPts.delete();
+  M.delete();
 
-                // 1. Cria o Rect da Fatia (posição do balão)
-                const rectFatia = new cv.Rect(
-                    x_celula_global + k * fatiaLargura, 
-                    y_celula_global, 
-                    fatiaLargura, 
-                    subAltura
-                );
-
-                // 2. Cria a VIEW na Matriz Binária
-                let subRoiOpcao = binaryMat.roi(rectFatia);
-                
-                // 3. Contagem
-                const areaTotalFatia = fatiaLargura * subAltura;
-                const nonZero = cv.countNonZero(subRoiOpcao);
-                const fillRatio = nonZero / areaTotalFatia;
-                
-                // --- Lógica de Marcação e Feedback ---
-                if (fillRatio > thresholdFill) {
-                    marcacoesDetectadas++;
-                    resultadosQuestoes[questaoGlobal].marcadas.push(opcao);
-                    
-                    // Desenha o RETÂNGULO colorida
-                    let corRetangulo = (opcao === respostaCorreta) ? COR_ACERTO : COR_ERRO;
-                    cv.rectangle(dst, 
-                                 new cv.Point(rectFatia.x, rectFatia.y), 
-                                 new cv.Point(rectFatia.x + rectFatia.width, rectFatia.y + rectFatia.height), 
-                                 corRetangulo, 2); // Espessura 2
-                } else if (opcao === respostaCorreta) {
-                    // Se esta é a opção correta E NÃO FOI MARCADA
-                    rectOpcaoCorretaNaoMarcada = rectFatia; // Armazena para desenhar o 'X' depois
-                }
-
-                // 4. Liberar a memória da VIEW
-                subRoiOpcao.delete(); 
-            } // Fim do loop de Opções (k)
-            
-            // --- Pós-processamento da Questão ---
-            const marcacoes = resultadosQuestoes[questaoGlobal].marcadas;
-
-            if (marcacoes.length === 1) {
-                if (marcacoes[0] === respostaCorreta) {
-                    resultadosQuestoes[questaoGlobal].status = 'ACERTO';
-                    acertos++;
-                } else {
-                    resultadosQuestoes[questaoGlobal].status = 'ERRO_RESPOSTA';
-                    // Se errou a resposta, desenha um 'X' na opção correta que deveria ter sido marcada
-                    if (rectOpcaoCorretaNaoMarcada) {
-                        drawX(dst, rectOpcaoCorretaNaoMarcada, COR_GABARITO_NAO_MARCADO, 2);
-                    }
-                }
-            } else if (marcacoes.length > 1) {
-                resultadosQuestoes[questaoGlobal].status = 'ERRO_MULTIPLA';
-                // Não desenhamos mais o retângulo grande, pois cada marcação já tem seu feedback.
-                // Se preferir, pode reativar um retângulo maior aqui, talvez com outra cor.
-            } else { // Nenhuma marcação
-                resultadosQuestoes[questaoGlobal].status = 'EM_BRANCO';
-                // Desenha um 'X' na opção correta quando a questão está em branco
-                if (rectOpcaoCorretaNaoMarcada) {
-                    drawX(dst, rectOpcaoCorretaNaoMarcada, COR_GABARITO_NAO_MARCADO, 2);
-                }
-            }
-            
-        }
-    }
-
-    return { 
-        totalMarcacoes: marcacoesDetectadas,
-        totalAcertos: acertos,
-        respostas: resultadosQuestoes 
-    };
-}
-
-// NOVA FUNÇÃO AUXILIAR para desenhar um 'X'
-function drawX(mat, rect, color, thickness) {
-    // Linha de cima para baixo (esquerda para direita)
-    cv.line(mat, 
-            new cv.Point(rect.x, rect.y), 
-            new cv.Point(rect.x + rect.width, rect.y + rect.height), 
-            color, 
-            thickness);
-    // Linha de cima para baixo (direita para esquerda)
-    cv.line(mat, 
-            new cv.Point(rect.x + rect.width, rect.y), 
-            new cv.Point(rect.x, rect.y + rect.height), 
-            color, 
-            thickness);
+  return corrigida;
 }
 
