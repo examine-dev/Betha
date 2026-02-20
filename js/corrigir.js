@@ -131,5 +131,4 @@ function tocarBeep() {
 }
 
 // Inicializa a câmera ao carregar
-
 iniciarCamera();
