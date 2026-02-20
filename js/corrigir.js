@@ -3,7 +3,7 @@ const btnCapturar = document.getElementById('btn-capturar');
 const canvas = document.getElementById('canvas-processamento');
 const statusMsg = document.getElementById('status');
 const resultCard = document.getElementById('result-card');
-const API_KEY = document.getElementById('key').value.trim();
+const API_KEY = document.getElementById('api-key').value.trim();
 
 // Configurações extraídas do seu Requisito [cite: 14, 23]
 const GABARITO_REFERENCIA = "1:A, 2:C, 3:E, 4:B, 5:D";
@@ -131,4 +131,5 @@ function tocarBeep() {
 }
 
 // Inicializa a câmera ao carregar
+
 iniciarCamera();
