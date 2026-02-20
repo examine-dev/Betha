@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protótipo: Corretor de Gabaritos</title>
+    <link rel="stylesheet" href="css/corrigir.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Teste</h1>
+        
+        <div class="camera-container">
+            <video id="preview" autoplay playsinline></video>
+            <div class="guia-gabarito"></div> </div>
+
+
+        <button id="btn-capturar" class="btn-principal">📸 Processar</button>
+            <div class="config-group">
+      <label>Chave da API</label>
+      <input type="text" id="api-key" placeholder="sk-ant-..." autocomplete="off">
+    </div>
+
+        <div id="status" class="status-msg">Aponte para o gabarito</div>
+
+        <div class="result-card" id="result-card" style="display: none;">
+            <h2>Nota: <span id="nota-valor">--</span></h2>
+            <pre id="json-output"></pre>
+        </div>
+
+        <canvas id="canvas-processamento" style="display: none;"></canvas>
+    </div>
+    <script src="js/corrigir.js"></script>
+</body>
+</html>
