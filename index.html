@@ -1,25 +1,35 @@
-<!doctype html>
-<html lang="pt-BR">
+<!DOCTYPE html>
+<html lang="pt-br">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Correção</title>
-  <link rel="stylesheet" href="styles/scan.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protótipo: Corretor de Gabaritos</title>
+    <link rel="stylesheet" href="css/corrigir.css">
 </head>
 <body>
-  <h1>Correção</h1>
+    <div class="container">
+        <h1>Teste</h1>
+        
+        <div class="camera-container">
+            <video id="preview" autoplay playsinline></video>
+            <div class="guia-gabarito"></div> </div>
 
-  <video id="video" autoplay playsinline style="display:none;"></video>
-  <div id="controls">
-    <button id="snapBtn" class="btn">Tirar Foto</button>
-  </div>
 
-  <canvas id="photoCanvas" style="display:none"></canvas>
+        <button id="btn-capturar" class="btn-principal">📸 Processar</button>
+            <div class="config-group">
+      <label>Chave da API</label>
+      <input type="text" id="api-key" placeholder="sk-ant-..." autocomplete="off">
+    </div>
 
-  <div id="log">Carregando OpenCV...</div>
+        <div id="status" class="status-msg">Aponte para o gabarito</div>
 
-  <!-- OpenCV.js (versão wasm) -->
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();" ></script>
-  <script src="js/scan.js"></script>
+        <div class="result-card" id="result-card" style="display: none;">
+            <h2>Nota: <span id="nota-valor">--</span></h2>
+            <pre id="json-output"></pre>
+        </div>
 
+        <canvas id="canvas-processamento" style="display: none;"></canvas>
+    </div>
+    <script src="js/corrigir.js"></script>
 </body>
+</html>
