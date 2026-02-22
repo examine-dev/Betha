@@ -11,7 +11,7 @@ const GABARITO_REFERENCIA = "1:A, 2:C, 3:E, 4:B, 5:D";
 // Chave da API (Obtenha em: https://aistudio.google.com/)
 
 // Mudamos para v1beta para suportar o formato JSON nativo e usamos o nome completo do modelo
-const URL_API = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
 
 // 1. Iniciar Câmera do Celular (Traseira)
 async function iniciarCamera() {
@@ -45,34 +45,49 @@ btnCapturar.addEventListener('click', async () => {
     const imgBase64 = canvas.toDataURL('image/jpeg', 0.8);
     
     // Simulação da lógica de negócio e chamada de API [cite: 6, 22, 23]
-    corrigirComIA(imgBase64, t0);
+    capturarECorrigir();
 });
 
-async function corrigirComIA(imagemBase64, tempoInicio) {
-    statusMsg.innerText = "IA Analisando gabarito...";
 
-    // Remove o cabeçalho do base64 se existir
-    const base64Data = imagemBase64.includes(',') ? imagemBase64.split(',')[1] : imagemBase64;
+async function capturarECorrigir() {
+    const t0 = performance.now();
+    
+    // 1. CAPTURA A CHAVE DENTRO DA FUNÇÃO (Fundamental para evitar o erro de unregistered)
+    const chaveInput = document.getElementById('api-key').value.trim();
+    
+    if (!chaveInput) {
+        alert("Por favor, cole sua chave AIzaSy... no campo de configurações.");
+        return;
+    }
 
-    const payload = {
-        contents: [{
-            parts: [{
-                text: "Analise o gabarito. Retorne um JSON estrito: {\"questoes\": [{\"id\": 1, \"marcada\": \"A\"}]}. Não adicione texto antes ou depois."
-            }, {
-                inline_data: {
-                    mime_type: "image/jpeg",
-                    data: base64Data
-                }
-            }]
-        }],
-        generationConfig: {
-            // No v1beta, este campo é permitido. Se der erro, o catch tratará.
-            response_mime_type: "application/json", 
-            temperature: 0.1
-        }
-    };
+    // 2. URL COM O NOME DO MODELO ATUALIZADO (gemini-1.5-flash-latest)
+    const URL_API = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${chaveInput}`;
 
     try {
+        statusMsg.innerText = "Capturando imagem...";
+        
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+
+        statusMsg.innerText = "IA Analisando...";
+
+        const payload = {
+            contents: [{
+                parts: [
+                    { text: "Analise o gabarito. Retorne apenas JSON: {\"questoes\": [{\"id\": 1, \"marcada\": \"A\"}]}" },
+                    { inline_data: { mime_type: "image/jpeg", data: base64Data } }
+                ]
+            }],
+            generationConfig: {
+                response_mime_type: "application/json",
+                temperature: 0.1
+            }
+        };
+
         const response = await fetch(URL_API, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -80,32 +95,34 @@ async function corrigirComIA(imagemBase64, tempoInicio) {
         });
 
         const data = await response.json();
-        alert(data);
 
         if (!response.ok) {
-            // Se o erro for 404 de novo, é porque sua conta ainda não tem acesso ao Flash no v1beta
-            throw new Error(data.error?.message || "Erro na API");
+            // Se der erro, mostra o que o Google respondeu exatamente
+            throw new Error(data.error?.message || "Erro na chamada da API");
         }
 
         const textoResposta = data.candidates[0].content.parts[0].text;
-        
-        // Garante que o texto seja um objeto JSON
-        const jsonResposta = JSON.parse(textoResposta.replace(/```json|```/g, ""));
+        const jsonResposta = JSON.parse(textoResposta);
         
         const t1 = performance.now();
-        const latencia = ((t1 - tempoInicio) / 1000).toFixed(2);
+        const latencia = ((t1 - t0) / 1000).toFixed(2);
         
-        exibirResultado(jsonResposta, latencia);
-        tocarBeep();
+        // Exibe o resultado usando a sua função renderVisual do HTML
+        if (typeof renderVisual === 'function') {
+            renderVisual(jsonResposta);
+        }
+        
+        statusMsg.innerText = `Sucesso em ${latencia}s!`;
 
     } catch (erro) {
-        console.error("Erro detalhado:", erro);
-        statusMsg.innerText = "Erro: " + erro.message;
-        
-        // Dica técnica: Se o erro persistir em 404, tente trocar na URL:
-        // gemini-1.5-flash por gemini-1.5-flash-latest
+        console.error("Erro:", erro);
+        statusMsg.innerText = "Falha: " + erro.message;
+        alert("Erro detalhado: " + erro.message);
     }
 }
+
+// Escuta o clique do botão
+btnCapturar.addEventListener('click', capturarECorrigir);
 
 function exibirResultado(data, tempo) {
     resultCard.style.display = 'block';
